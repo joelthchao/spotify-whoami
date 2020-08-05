@@ -4,12 +4,23 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 import spotipy
+from spotipy.util import prompt_for_user_token
 from spotipy.oauth2 import SpotifyOAuth
 
+from spotify_whoami import config
 
-def main():
-    auth_manager = auth()
-    sp = spotipy.Spotify(auth_manager=auth_manager)
+
+def login(username=None):
+    scope = 'user-read-recently-played'
+    client_secret = os.environ.get('SPOTIPY_CLIENT_SECRET') or input('Client Secret: ').strip()
+    username = username or input('Username: ').strip()
+    token = prompt_for_user_token(username, scope=scope, client_id=config.CLIENT_ID,
+                                  client_secret=client_secret, redirect_uri=config.REDIRECT_URI)
+    return token
+
+
+def read(token):
+    sp = spotipy.Spotify(auth=token)
     res = sp.current_user_recently_played(limit=50)
     popularities = []
     track_ids = []
@@ -18,6 +29,9 @@ def main():
         track = item['track']
         popularities.append(track['popularity'] / 100)
         track_ids.append(track['id'])
+
+    if len(track_ids) == 0:
+        raise Exception('No track ids are found.')
 
     audio_features = sp.audio_features(track_ids)
 
@@ -32,6 +46,7 @@ def main():
         ('valence', 0, 1),
         ('tempo', 0, 200),
     ]
+
     data = []
     for audio_feature in audio_features:
         for key, low, high in feature_keys:
@@ -39,6 +54,10 @@ def main():
             data.append((key, val))
     df = pd.DataFrame(data, columns=['feature', 'value'])
 
+    return df
+
+
+def plot(df):
     f, ax = plt.subplots()
     sns.stripplot(x='feature', y='value', data=df, alpha=0.25)
     sns.pointplot(x='feature', y='value', data=df, join=False, palette='dark',
@@ -47,20 +66,7 @@ def main():
     plt.show()
 
 
-def auth():
-    scope = 'user-read-recently-played'
-    client_id = os.environ.get('SPOTIPY_CLIENT_ID') or input('Client ID: ').strip()
-    client_secret = os.environ.get('SPOTIPY_CLIENT_SECRET') or input('Client Secret: ').strip()
-    redirect_uri = os.environ.get('SPOTIPY_REDIRECT_URI') or input('Redirect URI: ').strip()
-    username = os.environ.get('SPOTIPY_USERNAME') or input('Username: ').strip()
-    auth_manager = SpotifyOAuth(
-        client_id=client_id,
-        client_secret=client_secret,
-        redirect_uri=redirect_uri,
-        username=username,
-        scope=scope)
-    return auth_manager
-
-
 if __name__ == '__main__':
-    main()
+    token = login()
+    df = read(token)
+    plot(df)
